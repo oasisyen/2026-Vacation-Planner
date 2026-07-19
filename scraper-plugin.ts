@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +7,11 @@ import type { Plugin, ViteDevServer } from 'vite';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const SCRAPER_DIR = path.join(ROOT, 'scraper');
 const SCRIPT = path.join(SCRAPER_DIR, 'fetch_eva_prices.py');
-const PRICES = path.join(ROOT, 'public', 'prices.json');
+const PUBLIC_DIR = path.join(ROOT, 'public');
+const PRICES = path.join(PUBLIC_DIR, 'prices.json');
+
+/** Name of the container image built from scraper/Dockerfile. */
+const DOCKER_IMAGE = 'eva-scraper';
 
 interface JobState {
   running: boolean;
@@ -22,6 +26,54 @@ interface JobState {
 function pickPython(): string {
   const venv = path.join(SCRAPER_DIR, '.venv', 'bin', 'python');
   return fs.existsSync(venv) ? venv : 'python3';
+}
+
+/**
+ * True if we can run the scraper in Docker: the daemon is up AND the
+ * `eva-scraper` image has been built (`docker build -t eva-scraper scraper/`).
+ * A single `docker image inspect` covers both — it fails if either is missing.
+ */
+function dockerReady(): boolean {
+  const r = spawnSync('docker', ['image', 'inspect', DOCKER_IMAGE], {
+    stdio: 'ignore',
+  });
+  return r.status === 0;
+}
+
+/**
+ * Build the command to run one scrape. Prefer the container (keeps Python off
+ * the host); fall back to the venv/system Python when Docker isn't ready.
+ * Returns the spawn command + args and a short label for the UI.
+ */
+function buildRunner(start?: string, end?: string): {
+  cmd: string;
+  args: string[];
+  mode: 'docker' | 'local';
+} {
+  const range: string[] = [];
+  if (start) range.push('--start', start);
+  if (end) range.push('--end', end);
+
+  if (dockerReady()) {
+    // Mount the repo's public/ at /public; the script writes there via --out.
+    // Args after the image name are passed straight to the ENTRYPOINT script.
+    return {
+      cmd: 'docker',
+      args: [
+        'run',
+        '--rm',
+        '-v',
+        `${PUBLIC_DIR}:/public`,
+        DOCKER_IMAGE,
+        '--out',
+        '/public/prices.json',
+        ...range,
+      ],
+      mode: 'docker',
+    };
+  }
+
+  return { cmd: pickPython(), args: [SCRIPT, ...range], mode: 'local' };
 }
 
 function pricesUpdatedAt(): string | null {
@@ -68,19 +120,17 @@ export function scraperPlugin(): Plugin {
   let child: ChildProcess | null = null;
 
   const start = (start?: string, end?: string) => {
-    const args = [SCRIPT];
-    if (start) args.push('--start', start);
-    if (end) args.push('--end', end);
+    const runner = buildRunner(start, end);
 
     job.running = true;
     job.startedAt = new Date().toISOString();
     job.finishedAt = null;
     job.exitCode = null;
-    job.progress = 'starting…';
+    job.progress = `starting… (${runner.mode})`;
     job.error = null;
 
     let errTail = '';
-    child = spawn(pickPython(), args, { cwd: SCRAPER_DIR });
+    child = spawn(runner.cmd, runner.args, { cwd: SCRAPER_DIR });
 
     child.stderr?.on('data', (buf: Buffer) => {
       const text = buf.toString();
