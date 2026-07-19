@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Build info
+*.tsbuildinfo
+
+# Python scraper
+scraper/__pycache__/
+scraper/.venv/
+scraper/venv/

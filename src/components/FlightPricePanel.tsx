@@ -1,0 +1,256 @@
+import { useMemo, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { DateTime } from 'luxon';
+import { useTripStore } from '../store/useTripStore';
+import { cheapest, formatPrice, type PriceData } from '../lib/flights';
+import { eachDay, isWeekend } from '../lib/dates';
+
+interface Props {
+  prices: PriceData | null;
+  loading: boolean;
+}
+
+const OUT_COLOR = '#10b981'; // emerald
+const IN_COLOR = '#8b5cf6'; // violet
+const BEST_OUT = '#047857';
+const BEST_IN = '#6d28d9';
+
+function MiniChart({
+  data,
+  color,
+  bestColor,
+  bestDate,
+  currency,
+}: {
+  data: { date: string; price: number; label: string }[];
+  color: string;
+  bestColor: string;
+  bestDate?: string;
+  currency: string;
+}) {
+  if (data.length === 0)
+    return <p className="text-xs text-zinc-400">No price data.</p>;
+  return (
+    <ResponsiveContainer width="100%" height={120}>
+      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 9 }}
+          interval="preserveStartEnd"
+          stroke="#a1a1aa"
+        />
+        <YAxis
+          tick={{ fontSize: 9 }}
+          width={40}
+          stroke="#a1a1aa"
+          domain={['dataMin - 100', 'dataMax + 50']}
+          tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+        />
+        <Tooltip
+          formatter={(v: number) => formatPrice(v, currency)}
+          labelFormatter={(l) => `Date: ${l}`}
+          contentStyle={{ fontSize: 12 }}
+        />
+        <Bar dataKey="price" radius={[2, 2, 0, 0]}>
+          {data.map((d) => (
+            <Cell key={d.date} fill={d.date === bestDate ? bestColor : color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+export default function FlightPricePanel({ prices, loading }: Props) {
+  const { marks } = useTripStore();
+  const currency = prices?.currency ?? 'USD';
+
+  const toChart = (rec: Record<string, number> | undefined) =>
+    Object.entries(rec ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, price]) => ({
+        date,
+        price,
+        label: DateTime.fromISO(date).toFormat('LLL d'),
+      }));
+
+  const outData = useMemo(() => toChart(prices?.outbound), [prices]);
+  const inData = useMemo(() => toChart(prices?.inbound), [prices]);
+
+  const bestOut = prices ? cheapest(prices.outbound) : null;
+  const bestIn = prices ? cheapest(prices.inbound) : null;
+
+  // Combined trip picker
+  const outDates = outData.map((d) => d.date);
+  const inDates = inData.map((d) => d.date);
+  const [depart, setDepart] = useState('');
+  const [ret, setRet] = useState('');
+
+  const departPrice = depart ? prices?.outbound[depart] : undefined;
+  const retPrice = ret ? prices?.inbound[ret] : undefined;
+  const total =
+    departPrice != null && retPrice != null ? departPrice + retPrice : null;
+
+  const tripDays = useMemo(() => {
+    if (!depart || !ret || ret < depart) return null;
+    const days = eachDay(depart, ret);
+    let pto = 0;
+    let wfa = 0;
+    let weekend = 0;
+    for (const d of days) {
+      if (marks[d] === 'PTO') pto++;
+      else if (marks[d] === 'WFA') wfa++;
+      else if (marks[d] === 'WEEKEND' || isWeekend(d)) weekend++;
+    }
+    return { length: days.length, pto, wfa, weekend };
+  }, [depart, ret, marks]);
+
+  const isMock = (prices as unknown as { _note?: string })?._note != null;
+  const updated = prices
+    ? DateTime.fromISO(prices.updatedAt).toRelative()
+    : null;
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          EVA flight prices · JFK ↔ TPE
+        </h2>
+        {updated && (
+          <span
+            className={`text-xs ${isMock ? 'text-amber-600' : 'text-zinc-400'}`}
+            title={isMock ? 'Sample data — run the scraper for real prices' : ''}
+          >
+            {isMock ? 'sample data' : `updated ${updated}`}
+          </span>
+        )}
+      </div>
+
+      {loading && <p className="text-sm text-zinc-400">Loading prices…</p>}
+
+      {!loading && !prices && (
+        <p className="text-sm text-zinc-400">
+          No <code>prices.json</code> found. Run{' '}
+          <code>python scraper/fetch_eva_prices.py</code>.
+        </p>
+      )}
+
+      {!loading && prices && (
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-500/10">
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                Cheapest outbound
+              </p>
+              {bestOut && (
+                <p className="font-semibold">
+                  {DateTime.fromISO(bestOut.date).toFormat('LLL d')} ·{' '}
+                  {formatPrice(bestOut.price, currency)}
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg bg-violet-50 p-2 dark:bg-violet-500/10">
+              <p className="text-xs text-violet-700 dark:text-violet-300">
+                Cheapest inbound
+              </p>
+              {bestIn && (
+                <p className="font-semibold">
+                  {DateTime.fromISO(bestIn.date).toFormat('LLL d')} ·{' '}
+                  {formatPrice(bestIn.price, currency)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <p className="mb-1 text-xs font-medium text-zinc-500">
+            Outbound JFK → TPE
+          </p>
+          <MiniChart
+            data={outData}
+            color={OUT_COLOR}
+            bestColor={BEST_OUT}
+            bestDate={bestOut?.date}
+            currency={currency}
+          />
+
+          <p className="mb-1 mt-3 text-xs font-medium text-zinc-500">
+            Inbound TPE → JFK
+          </p>
+          <MiniChart
+            data={inData}
+            color={IN_COLOR}
+            bestColor={BEST_IN}
+            bestDate={bestIn?.date}
+            currency={currency}
+          />
+
+          {/* Combined trip picker */}
+          <div className="mt-4 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Plan a round trip
+            </p>
+            <div className="flex flex-wrap gap-2 text-sm">
+              <label className="flex-1">
+                <span className="mb-0.5 block text-xs text-zinc-500">Depart</span>
+                <select
+                  value={depart}
+                  onChange={(e) => setDepart(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+                >
+                  <option value="">—</option>
+                  {outDates.map((d) => (
+                    <option key={d} value={d}>
+                      {DateTime.fromISO(d).toFormat('LLL d')} ·{' '}
+                      {formatPrice(prices.outbound[d], currency)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex-1">
+                <span className="mb-0.5 block text-xs text-zinc-500">Return</span>
+                <select
+                  value={ret}
+                  onChange={(e) => setRet(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+                >
+                  <option value="">—</option>
+                  {inDates
+                    .filter((d) => !depart || d >= depart)
+                    .map((d) => (
+                      <option key={d} value={d}>
+                        {DateTime.fromISO(d).toFormat('LLL d')} ·{' '}
+                        {formatPrice(prices.inbound[d], currency)}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+
+            {total != null && (
+              <div className="mt-2 text-sm">
+                <p>
+                  Round-trip airfare:{' '}
+                  <strong>{formatPrice(total, currency)}</strong>
+                </p>
+                {tripDays && (
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    {tripDays.length} days away · {tripDays.pto} PTO ·{' '}
+                    {tripDays.wfa} WFA · {tripDays.weekend} weekend
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}

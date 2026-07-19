@@ -1,0 +1,2 @@
+# EVA price scraper. Requires Python 3.10+.
+fli>=0.4
