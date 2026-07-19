@@ -11,7 +11,27 @@ single-airline, single-route fare per date. Google Flights does, so we scrape it
 with the [`fli`](https://github.com/punitarani/fli) library, keeping only EVA
 non-stop results.
 
-## Setup (needs Python 3.10+)
+## Setup
+
+Pick **one** of these. The app's **Refresh prices** button auto-detects which you
+have: it uses Docker if the `eva-scraper` image is built, otherwise the venv.
+
+### Option A — Docker (no Python on your system)
+
+```bash
+cd scraper
+docker build -t eva-scraper .
+```
+
+That's it — the button now runs the scraper in a container. To run it by hand,
+mount the repo's `public/` so the JSON lands in the real tree:
+
+```bash
+docker run --rm -v "$(pwd)/../public:/public" \
+  eva-scraper --out /public/prices.json --start 2026-11-01 --end 2026-12-31
+```
+
+### Option B — local Python (needs Python 3.10+)
 
 ```bash
 cd scraper

@@ -1,2 +1,3 @@
 # EVA price scraper. Requires Python 3.10+.
-fli>=0.4
+# PyPI distribution is named `flights` (github.com/punitarani/fli); it imports as `fli`.
+flights>=0.9
