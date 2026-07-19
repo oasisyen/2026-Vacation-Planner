@@ -40,3 +40,60 @@ export function formatPrice(price: number, currency = 'USD'): string {
     maximumFractionDigits: 0,
   }).format(price);
 }
+
+/** True if prices are missing or older than `maxAgeHours` (default 24h). */
+export function isStale(updatedAt?: string, maxAgeHours = 24): boolean {
+  if (!updatedAt) return true;
+  const t = Date.parse(updatedAt);
+  if (Number.isNaN(t)) return true;
+  return Date.now() - t > maxAgeHours * 3600 * 1000;
+}
+
+export interface RefreshStatus {
+  running: boolean;
+  progress: string | null;
+  error: string | null;
+  exitCode: number | null;
+  updatedAt: string | null;
+}
+
+/** Ask the dev-server scraper endpoint to (re)scrape for the given window. */
+export async function triggerRefresh(
+  start: string,
+  end: string,
+): Promise<{ started: boolean; error?: string }> {
+  try {
+    const res = await fetch('/api/refresh-prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start, end }),
+    });
+    if (res.status === 409) return { started: false, error: 'already running' };
+    if (!res.ok) {
+      return {
+        started: false,
+        error:
+          res.status === 404
+            ? 'Refresh only works while running `npm run dev` (dev server).'
+            : `server error ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    return { started: !!data.started };
+  } catch {
+    return {
+      started: false,
+      error: 'Could not reach the dev server. Is `npm run dev` running?',
+    };
+  }
+}
+
+export async function getRefreshStatus(): Promise<RefreshStatus | null> {
+  try {
+    const res = await fetch('/api/refresh-prices', { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as RefreshStatus;
+  } catch {
+    return null;
+  }
+}

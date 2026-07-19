@@ -22,22 +22,30 @@ pip install -r requirements.txt
 
 ## Run
 
+Easiest: click **Refresh prices** in the app while `npm run dev` is running — it
+calls this scraper for your current trip window automatically. To run it by hand:
+
 ```bash
 # Whole default trip window (Nov 1 – Dec 31, 2026), both directions:
 python fetch_eva_prices.py
 
-# Narrow the ranges to make fewer requests (gentler, faster):
+# Any date range you want — there is NO fixed limit; the range is fully
+# controlled by these args (the app passes your trip window when you click
+# Refresh). Narrow them to make fewer requests (gentler, faster):
+python fetch_eva_prices.py --start 2026-10-01 --end 2027-01-31
 python fetch_eva_prices.py --out-start 2026-11-14 --out-end 2026-11-24 \
                            --in-start 2026-12-01 --in-end 2026-12-14
 ```
 
 It paces requests (a few seconds apart) — a full window takes a little while.
-When it finishes, reload the web app; the flight panel shows the new prices and
-an "updated …" timestamp instead of "sample data".
+When it finishes, reload the web app (or the Refresh button reloads for you); the
+flight panel shows the new prices and an "updated …" timestamp instead of
+"sample data".
 
-Useful flags: `--start/--end` (whole window), `--out-start/--out-end` and
-`--in-start/--in-end` (per-direction ranges), `--pace` (seconds between
-requests), `--out` (output path).
+Useful flags: `--start/--end` (whole window, default Nov 1 – Dec 31 2026),
+`--out-start/--out-end` and `--in-start/--in-end` (per-direction ranges),
+`--pace` (seconds between requests), `--out` (output path). The Nov 14 – Dec 14
+you may have seen was only the committed sample data — not a scraper limit.
 
 ## Refresh on a schedule (optional)
 

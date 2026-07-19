@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { DateTime } from 'luxon';
 import { useTripStore, type DayStatus } from './store/useTripStore';
 import { eachDay } from './lib/dates';
@@ -9,9 +17,12 @@ import ListView from './components/ListView';
 import SelectionToolbar from './components/SelectionToolbar';
 import QuotaPanel from './components/QuotaPanel';
 import TimezoneToggle from './components/TimezoneToggle';
+import TripRangeControl from './components/TripRangeControl';
 import EventList from './components/EventList';
-import FlightPricePanel from './components/FlightPricePanel';
 import DataIO from './components/DataIO';
+
+// recharts is heavy; load the flight panel as a separate async chunk after first paint.
+const FlightPricePanel = lazy(() => import('./components/FlightPricePanel'));
 import { STATUS_META } from './lib/status';
 
 type View = 'calendar' | 'list';
@@ -27,12 +38,16 @@ export default function App() {
   const [prices, setPrices] = useState<PriceData | null>(null);
   const [loadingPrices, setLoadingPrices] = useState(true);
 
-  useEffect(() => {
-    loadPrices().then((p) => {
-      setPrices(p);
-      setLoadingPrices(false);
-    });
+  const reloadPrices = useCallback(async () => {
+    setLoadingPrices(true);
+    const p = await loadPrices();
+    setPrices(p);
+    setLoadingPrices(false);
   }, []);
+
+  useEffect(() => {
+    void reloadPrices();
+  }, [reloadPrices]);
 
   const today = DateTime.now().toISODate() ?? '';
   const uncovered = useMemo(
@@ -89,10 +104,7 @@ export default function App() {
           <h1 className="text-lg font-bold">
             ✈️ NYC ↔ Taipei Vacation Planner
           </h1>
-          <span className="text-sm text-zinc-400">
-            {DateTime.fromISO(tripStart).toFormat('LLL d')} –{' '}
-            {DateTime.fromISO(tripEnd).toFormat('LLL d, yyyy')}
-          </span>
+          <TripRangeControl />
           <div className="ml-auto flex items-center gap-3">
             <TimezoneToggle />
           </div>
@@ -149,7 +161,19 @@ export default function App() {
         {/* Right: panels */}
         <aside className="space-y-6">
           <QuotaPanel />
-          <FlightPricePanel prices={prices} loading={loadingPrices} />
+          <Suspense
+            fallback={
+              <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800">
+                Loading flight prices…
+              </div>
+            }
+          >
+            <FlightPricePanel
+              prices={prices}
+              loading={loadingPrices}
+              onReload={reloadPrices}
+            />
+          </Suspense>
           <EventList />
           <DataIO />
         </aside>

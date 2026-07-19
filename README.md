@@ -20,6 +20,9 @@ Build a static bundle with `npm run build` (output in `dist/`).
 
 ## Features
 
+- **Trip window** — set the From/To dates in the header (or use ‹ / › to shift a
+  month). The calendar renders every month in that window, so this is how you
+  view other months.
 - **Calendar view** — click days to select, shift-click for a range, then mark
   PTO / WFA / Weekend. Weekends are excluded from your quotas.
 - **List view** — the same days as a date-sorted, quick-editable table.
@@ -37,10 +40,17 @@ Build a static bundle with `npm run build` (output in `dist/`).
 ## Flight prices
 
 The app reads `public/prices.json`. It ships with **sample data** so everything
-works immediately. For real EVA prices, run the scraper in
-[`scraper/`](scraper/README.md) (needs Python 3.10+) — it writes real prices to
-`public/prices.json`, and the panel shows an "updated …" timestamp instead of
-"sample data".
+works immediately. For real EVA prices you can either:
+
+- Click **Refresh prices** in the flight panel (works while `npm run dev` is
+  running). It runs the scraper for your current trip window, shows progress,
+  and reloads the prices when done. The button is highlighted when data is
+  missing, sample, or over a day old.
+- Or run the scraper manually — see [`scraper/`](scraper/README.md).
+
+Either way needs **Python 3.10+** with the scraper deps installed (the Refresh
+button will show a setup message if they're missing). Prices are cached per date,
+not live at booking time — always confirm the fare on EVA's site before buying.
 
 ## Tech
 

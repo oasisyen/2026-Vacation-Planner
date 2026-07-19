@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -10,12 +10,20 @@ import {
 } from 'recharts';
 import { DateTime } from 'luxon';
 import { useTripStore } from '../store/useTripStore';
-import { cheapest, formatPrice, type PriceData } from '../lib/flights';
+import {
+  cheapest,
+  formatPrice,
+  getRefreshStatus,
+  isStale,
+  triggerRefresh,
+  type PriceData,
+} from '../lib/flights';
 import { eachDay, isWeekend } from '../lib/dates';
 
 interface Props {
   prices: PriceData | null;
   loading: boolean;
+  onReload: () => Promise<void> | void;
 }
 
 const OUT_COLOR = '#10b981'; // emerald
@@ -69,9 +77,46 @@ function MiniChart({
   );
 }
 
-export default function FlightPricePanel({ prices, loading }: Props) {
-  const { marks } = useTripStore();
+export default function FlightPricePanel({ prices, loading, onReload }: Props) {
+  const { marks, tripStart, tripEnd } = useTripStore();
   const currency = prices?.currency ?? 'USD';
+
+  // --- Refresh (dev-server scraper) ---
+  const [refreshing, setRefreshing] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
+
+  const startRefresh = async () => {
+    setRefreshError(null);
+    const { started, error } = await triggerRefresh(tripStart, tripEnd);
+    if (!started) {
+      setRefreshError(error ?? 'Could not start the scraper.');
+      return;
+    }
+    setRefreshing(true);
+    setProgress('starting…');
+    pollRef.current = setInterval(async () => {
+      const status = await getRefreshStatus();
+      if (!status) return;
+      setProgress(status.progress);
+      if (!status.running) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setRefreshing(false);
+        setProgress(null);
+        if (status.error) setRefreshError(status.error);
+        else await onReload();
+      }
+    }, 3000);
+  };
 
   const toChart = (rec: Record<string, number> | undefined) =>
     Object.entries(rec ?? {})
@@ -117,10 +162,11 @@ export default function FlightPricePanel({ prices, loading }: Props) {
   const updated = prices
     ? DateTime.fromISO(prices.updatedAt).toRelative()
     : null;
+  const stale = isMock || isStale(prices?.updatedAt);
 
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
           EVA flight prices · JFK ↔ TPE
         </h2>
@@ -133,6 +179,40 @@ export default function FlightPricePanel({ prices, loading }: Props) {
           </span>
         )}
       </div>
+
+      {/* Refresh control */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={startRefresh}
+          disabled={refreshing}
+          className={`rounded-md px-3 py-1 text-sm font-medium disabled:opacity-60 ${
+            stale && !refreshing
+              ? 'bg-indigo-600 text-white'
+              : 'border border-zinc-300 text-zinc-700 dark:border-zinc-600 dark:text-zinc-200'
+          }`}
+        >
+          {refreshing ? 'Scraping…' : 'Refresh prices'}
+        </button>
+        {refreshing && (
+          <span className="text-xs text-zinc-500">
+            {progress ? `${progress} · ` : ''}this can take a few minutes
+          </span>
+        )}
+        {!refreshing && stale && !refreshError && (
+          <span className="text-xs text-amber-600">
+            {isMock ? 'showing sample data' : 'over a day old'} — scrapes{' '}
+            {DateTime.fromISO(tripStart).toFormat('LLL d')}–
+            {DateTime.fromISO(tripEnd).toFormat('LLL d')}
+          </span>
+        )}
+      </div>
+
+      {refreshError && (
+        <p className="mb-3 whitespace-pre-line rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">
+          {refreshError}
+        </p>
+      )}
 
       {loading && <p className="text-sm text-zinc-400">Loading prices…</p>}
 
