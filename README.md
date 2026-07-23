@@ -37,6 +37,36 @@ Build a static bundle with `npm run build` (output in `dist/`).
   highlighted, price badges on calendar cells, and a round-trip picker showing
   total airfare + how many PTO/WFA days a chosen itinerary consumes.
 
+## Share options with family (read-only GitHub Pages)
+
+Build a few competing plans and publish them as a **read-only** page so family
+can compare and decide — without touching your editor.
+
+1. **Save options.** In the **Shared options** panel (right column), pick a round
+   trip in the flight panel, then give the current plan a name and click *Save
+   current plan as option*. Each save freezes the calendar, PTO/WFA marks,
+   events, chosen flight, and a snapshot of the fares into `public/plans.json`.
+   Load / rename / reorder / delete saved options from the same panel. (Saving
+   only works while `npm run dev` is running.)
+2. **Build the shareable site.**
+
+   ```bash
+   npm run build:share    # writes the read-only viewer to docs/
+   npm run preview:share  # optional: preview it locally before publishing
+   ```
+
+   You can also preview the viewer against live editor data at
+   `http://localhost:5173/?share` while `npm run dev` runs (read-only; it never
+   overwrites your working plan).
+3. **Publish.** Commit and push `docs/`, then in GitHub → **Settings → Pages**
+   set **Source = Deploy from a branch**, **Branch = `main` / `/docs`**. Share
+   the URL: `https://<your-user>.github.io/2026-Vacation-Planner/`.
+
+The published site is self-contained (fares come from each option's snapshot, so
+no scraper or dev server is needed to view it). If your repo is **not** named
+`2026-Vacation-Planner`, change the `VITE_BASE=/2026-Vacation-Planner/` value in
+the `build:share` / `preview:share` scripts to match `/<your-repo>/`.
+
 ## Flight prices
 
 The app reads `public/prices.json`. It ships with **sample data** so everything

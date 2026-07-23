@@ -20,6 +20,7 @@ import TimezoneToggle from './components/TimezoneToggle';
 import TripRangeControl from './components/TripRangeControl';
 import EventList from './components/EventList';
 import DataIO from './components/DataIO';
+import SharedOptionsPanel from './components/SharedOptionsPanel';
 
 // recharts is heavy; load the flight panel as a separate async chunk after first paint.
 const FlightPricePanel = lazy(() => import('./components/FlightPricePanel'));
@@ -175,6 +176,7 @@ export default function App() {
             />
           </Suspense>
           <EventList />
+          <SharedOptionsPanel prices={prices} />
           <DataIO />
         </aside>
       </main>
