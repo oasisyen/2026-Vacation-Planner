@@ -73,12 +73,12 @@ const genId = () =>
 
 // Sensible defaults for a late-2026 NYC -> Taipei trip window.
 const DEFAULTS: PersistedTrip = {
-  tripStart: '2026-11-01',
-  tripEnd: '2026-12-31',
+  tripStart: '2026-10-01',
+  tripEnd: '2026-11-30',
   marks: {},
   events: [],
   totalPTO: 15,
-  totalWFA: 10,
+  totalWFA: 8,
   displayZone: 'America/New_York',
   flightPrefs: { origin: 'JFK', destination: 'TPE' },
 };
