@@ -20,6 +20,9 @@ interface JobState {
   exitCode: number | null;
   progress: string | null;
   error: string | null;
+  mode: 'docker' | 'local' | null;
+  imageBuiltAt: string | null;
+  imageStale: boolean;
 }
 
 /** Prefer the scraper venv's python if present, else fall back to python3. */
@@ -29,32 +32,62 @@ function pickPython(): string {
 }
 
 /**
- * True if we can run the scraper in Docker: the daemon is up AND the
- * `eva-scraper` image has been built (`docker build -t eva-scraper scraper/`).
- * A single `docker image inspect` covers both — it fails if either is missing.
+ * ISO-8601 creation timestamp of the `eva-scraper` image, or null if the
+ * daemon is down or the image hasn't been built
+ * (`docker build -t eva-scraper scraper/`).
  */
-function dockerReady(): boolean {
-  const r = spawnSync('docker', ['image', 'inspect', DOCKER_IMAGE], {
-    stdio: 'ignore',
+function dockerImageBuiltAt(): string | null {
+  const r = spawnSync(
+    'docker',
+    ['image', 'inspect', DOCKER_IMAGE, '--format', '{{.Created}}'],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return null;
+  return r.stdout.trim() || null;
+}
+
+/**
+ * True if the scraper script or its Docker build inputs were edited after the
+ * image was built — i.e. `docker run` would execute stale code. This is a
+ * real trap: the image only gets rebuilt when someone remembers to run
+ * `docker build`, so an edit to fetch_eva_prices.py silently keeps being
+ * ignored by every refresh until then.
+ */
+function isImageStale(builtAt: string): boolean {
+  const builtMs = Date.parse(builtAt);
+  if (Number.isNaN(builtMs)) return false;
+  const inputs = [
+    SCRIPT,
+    path.join(SCRAPER_DIR, 'Dockerfile'),
+    path.join(SCRAPER_DIR, 'requirements.txt'),
+  ];
+  return inputs.some((f) => {
+    try {
+      return fs.statSync(f).mtimeMs > builtMs;
+    } catch {
+      return false;
+    }
   });
-  return r.status === 0;
 }
 
 /**
  * Build the command to run one scrape. Prefer the container (keeps Python off
  * the host); fall back to the venv/system Python when Docker isn't ready.
- * Returns the spawn command + args and a short label for the UI.
+ * Returns the spawn command + args and staleness info for the UI.
  */
 function buildRunner(start?: string, end?: string): {
   cmd: string;
   args: string[];
   mode: 'docker' | 'local';
+  imageBuiltAt: string | null;
+  imageStale: boolean;
 } {
   const range: string[] = [];
   if (start) range.push('--start', start);
   if (end) range.push('--end', end);
 
-  if (dockerReady()) {
+  const imageBuiltAt = dockerImageBuiltAt();
+  if (imageBuiltAt) {
     // Mount the repo's public/ at /public; the script writes there via --out.
     // Args after the image name are passed straight to the ENTRYPOINT script.
     return {
@@ -70,10 +103,18 @@ function buildRunner(start?: string, end?: string): {
         ...range,
       ],
       mode: 'docker',
+      imageBuiltAt,
+      imageStale: isImageStale(imageBuiltAt),
     };
   }
 
-  return { cmd: pickPython(), args: [SCRIPT, ...range], mode: 'local' };
+  return {
+    cmd: pickPython(),
+    args: [SCRIPT, ...range],
+    mode: 'local',
+    imageBuiltAt: null,
+    imageStale: false,
+  };
 }
 
 function pricesUpdatedAt(): string | null {
@@ -116,6 +157,9 @@ export function scraperPlugin(): Plugin {
     exitCode: null,
     progress: null,
     error: null,
+    mode: null,
+    imageBuiltAt: null,
+    imageStale: false,
   };
   let child: ChildProcess | null = null;
 
@@ -128,6 +172,9 @@ export function scraperPlugin(): Plugin {
     job.exitCode = null;
     job.progress = `starting… (${runner.mode})`;
     job.error = null;
+    job.mode = runner.mode;
+    job.imageBuiltAt = runner.imageBuiltAt;
+    job.imageStale = runner.imageStale;
 
     let errTail = '';
     child = spawn(runner.cmd, runner.args, { cwd: SCRAPER_DIR });
@@ -154,6 +201,23 @@ export function scraperPlugin(): Plugin {
       if (code !== 0 && !job.error) {
         // surface the tail of stderr so the UI can explain the failure
         job.error = errTail.trim().split('\n').slice(-4).join('\n') || `exited ${code}`;
+      } else if (code === 0) {
+        // Stamp provenance onto the written file so staleness survives a page
+        // reload — not just this in-memory job, which resets on server restart.
+        try {
+          const written = JSON.parse(fs.readFileSync(PRICES, 'utf8'));
+          written.scrapedVia = runner.mode;
+          if (runner.mode === 'docker') {
+            written.dockerImageBuiltAt = runner.imageBuiltAt;
+            written.dockerImageStale = runner.imageStale;
+          } else {
+            delete written.dockerImageBuiltAt;
+            delete written.dockerImageStale;
+          }
+          fs.writeFileSync(PRICES, JSON.stringify(written, null, 2) + '\n');
+        } catch {
+          // best-effort; the scrape results are already on disk either way
+        }
       }
     });
   };

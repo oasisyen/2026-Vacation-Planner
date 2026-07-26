@@ -5,6 +5,12 @@ export interface PriceData {
   outbound: Record<string, number>;
   /** ISO date -> cheapest EVA non-stop price for that return day */
   inbound: Record<string, number>;
+  /** How the last successful refresh was run (dev-server scrapes only). */
+  scrapedVia?: 'docker' | 'local';
+  /** ISO-8601 creation time of the Docker image used, if scrapedVia is 'docker'. */
+  dockerImageBuiltAt?: string;
+  /** True if that image was already older than the scraper script when it ran. */
+  dockerImageStale?: boolean;
 }
 
 export interface CheapestPick {
@@ -55,6 +61,9 @@ export interface RefreshStatus {
   error: string | null;
   exitCode: number | null;
   updatedAt: string | null;
+  mode: 'docker' | 'local' | null;
+  imageBuiltAt: string | null;
+  imageStale: boolean;
 }
 
 /** Ask the dev-server scraper endpoint to (re)scrape for the given window. */

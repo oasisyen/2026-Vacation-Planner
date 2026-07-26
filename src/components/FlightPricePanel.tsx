@@ -86,6 +86,9 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshMode, setRefreshMode] = useState<'docker' | 'local' | null>(null);
+  const [imageStale, setImageStale] = useState(false);
+  const [imageBuiltAt, setImageBuiltAt] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(
@@ -104,10 +107,13 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
     }
     setRefreshing(true);
     setProgress('starting…');
-    pollRef.current = setInterval(async () => {
+    const poll = async () => {
       const status = await getRefreshStatus();
       if (!status) return;
       setProgress(status.progress);
+      setRefreshMode(status.mode);
+      setImageStale(status.imageStale);
+      setImageBuiltAt(status.imageBuiltAt);
       if (!status.running) {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
@@ -116,7 +122,9 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
         if (status.error) setRefreshError(status.error);
         else await onReload();
       }
-    }, 3000);
+    };
+    await poll(); // don't wait a full 3s to learn which mode kicked off
+    pollRef.current = setInterval(poll, 3000);
   };
 
   const toChart = (rec: Record<string, number> | undefined) =>
@@ -178,6 +186,9 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
             title={isMock ? 'Sample data — run the scraper for real prices' : ''}
           >
             {isMock ? 'sample data' : `updated ${updated}`}
+            {!isMock && prices?.scrapedVia && (
+              <> · via {prices.scrapedVia === 'docker' ? 'Docker' : 'local Python'}</>
+            )}
           </span>
         )}
       </div>
@@ -198,6 +209,11 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
         </button>
         {refreshing && (
           <span className="text-xs text-zinc-500">
+            {refreshMode && (
+              <span className="mr-1 rounded bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                via {refreshMode === 'docker' ? 'Docker' : 'local Python'}
+              </span>
+            )}
             {progress ? `${progress} · ` : ''}this can take a few minutes
           </span>
         )}
@@ -209,6 +225,26 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
           </span>
         )}
       </div>
+
+      {refreshing && imageStale && (
+        <p className="mb-3 text-xs text-amber-600">
+          ⚠ Docker image was built{' '}
+          {imageBuiltAt ? DateTime.fromISO(imageBuiltAt).toRelative() : 'a while ago'}, older
+          than the scraper script — this run may use outdated logic. Rebuild with{' '}
+          <code>docker build -t eva-scraper scraper/</code>.
+        </p>
+      )}
+
+      {!refreshing && !isMock && prices?.dockerImageStale && (
+        <p className="mb-3 text-xs text-amber-600">
+          ⚠ Last refresh ran against a Docker image built{' '}
+          {prices.dockerImageBuiltAt
+            ? DateTime.fromISO(prices.dockerImageBuiltAt).toRelative()
+            : 'a while ago'}
+          , older than the scraper script at the time. Rebuild with{' '}
+          <code>docker build -t eva-scraper scraper/</code> and refresh again.
+        </p>
+      )}
 
       {refreshError && (
         <p className="mb-3 whitespace-pre-line rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">
