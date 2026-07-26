@@ -227,22 +227,10 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
       </div>
 
       {refreshing && imageStale && (
-        <p className="mb-3 text-xs text-amber-600">
-          ⚠ Docker image was built{' '}
-          {imageBuiltAt ? DateTime.fromISO(imageBuiltAt).toRelative() : 'a while ago'}, older
-          than the scraper script — this run may use outdated logic. Rebuild with{' '}
-          <code>docker build -t eva-scraper scraper/</code>.
-        </p>
-      )}
-
-      {!refreshing && !isMock && prices?.dockerImageStale && (
-        <p className="mb-3 text-xs text-amber-600">
-          ⚠ Last refresh ran against a Docker image built{' '}
-          {prices.dockerImageBuiltAt
-            ? DateTime.fromISO(prices.dockerImageBuiltAt).toRelative()
-            : 'a while ago'}
-          , older than the scraper script at the time. Rebuild with{' '}
-          <code>docker build -t eva-scraper scraper/</code> and refresh again.
+        <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">
+          🔄 Docker image was outdated (built{' '}
+          {imageBuiltAt ? DateTime.fromISO(imageBuiltAt).toRelative() : 'a while ago'}) —
+          rebuilding it automatically before scraping.
         </p>
       )}
 

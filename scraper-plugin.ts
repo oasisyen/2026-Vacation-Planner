@@ -163,18 +163,18 @@ export function scraperPlugin(): Plugin {
   };
   let child: ChildProcess | null = null;
 
-  const start = (start?: string, end?: string) => {
-    const runner = buildRunner(start, end);
+  /** `docker build -t eva-scraper scraper/`, async so it doesn't block the dev server. */
+  const rebuildDockerImage = (onDone: (ok: boolean, log: string) => void) => {
+    let log = '';
+    const build = spawn('docker', ['build', '-t', DOCKER_IMAGE, SCRAPER_DIR]);
+    build.stdout?.on('data', (buf: Buffer) => (log = (log + buf.toString()).slice(-2000)));
+    build.stderr?.on('data', (buf: Buffer) => (log = (log + buf.toString()).slice(-2000)));
+    build.on('error', (e) => onDone(false, e.message));
+    build.on('close', (code) => onDone(code === 0, log));
+  };
 
-    job.running = true;
-    job.startedAt = new Date().toISOString();
-    job.finishedAt = null;
-    job.exitCode = null;
+  const runScrape = (runner: ReturnType<typeof buildRunner>) => {
     job.progress = `starting… (${runner.mode})`;
-    job.error = null;
-    job.mode = runner.mode;
-    job.imageBuiltAt = runner.imageBuiltAt;
-    job.imageStale = runner.imageStale;
 
     let errTail = '';
     child = spawn(runner.cmd, runner.args, { cwd: SCRAPER_DIR });
@@ -220,6 +220,46 @@ export function scraperPlugin(): Plugin {
         }
       }
     });
+  };
+
+  const start = (rangeStart?: string, rangeEnd?: string) => {
+    const runner = buildRunner(rangeStart, rangeEnd);
+
+    job.running = true;
+    job.startedAt = new Date().toISOString();
+    job.finishedAt = null;
+    job.exitCode = null;
+    job.error = null;
+    job.mode = runner.mode;
+    job.imageBuiltAt = runner.imageBuiltAt;
+    job.imageStale = runner.imageStale;
+
+    if (runner.mode === 'docker' && runner.imageStale) {
+      job.progress = 'image outdated — rebuilding docker image…';
+      rebuildDockerImage((ok, log) => {
+        if (!ok) {
+          job.running = false;
+          job.finishedAt = new Date().toISOString();
+          job.progress = null;
+          job.error =
+            'Docker image rebuild failed:\n' +
+            (log.trim().split('\n').slice(-6).join('\n') || 'unknown error');
+          return;
+        }
+        // A successful `docker build` means the image now matches the script
+        // on disk by definition — even if Docker hit cache (e.g. the file's
+        // mtime changed but its content didn't) and left `Created` unchanged,
+        // so re-deriving staleness from that timestamp here would be wrong.
+        runner.imageBuiltAt = dockerImageBuiltAt();
+        runner.imageStale = false;
+        job.imageBuiltAt = runner.imageBuiltAt;
+        job.imageStale = false;
+        runScrape(runner);
+      });
+      return;
+    }
+
+    runScrape(runner);
   };
 
   return {
