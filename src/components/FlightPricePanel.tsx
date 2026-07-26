@@ -31,6 +31,16 @@ const IN_COLOR = '#8b5cf6'; // violet
 const BEST_OUT = '#047857';
 const BEST_IN = '#6d28d9';
 
+/** Parse "OUT 12/61" / "IN 45/61" progress strings into a determinate fraction. */
+function parseProgress(
+  progress: string | null,
+): { leg: 'outbound' | 'inbound'; current: number; total: number } | null {
+  if (!progress) return null;
+  const m = progress.match(/^(OUT|IN) (\d+)\/(\d+)$/);
+  if (!m) return null;
+  return { leg: m[1] === 'OUT' ? 'outbound' : 'inbound', current: Number(m[2]), total: Number(m[3]) };
+}
+
 function MiniChart({
   data,
   color,
@@ -87,19 +97,22 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
   const [progress, setProgress] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshMode, setRefreshMode] = useState<'docker' | 'local' | null>(null);
-  const [imageStale, setImageStale] = useState(false);
-  const [imageBuiltAt, setImageBuiltAt] = useState<string | null>(null);
+  const [justCompleted, setJustCompleted] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
     () => () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (completedTimerRef.current) clearTimeout(completedTimerRef.current);
     },
     [],
   );
 
   const startRefresh = async () => {
     setRefreshError(null);
+    setJustCompleted(false);
+    if (completedTimerRef.current) clearTimeout(completedTimerRef.current);
     const { started, error } = await triggerRefresh(tripStart, tripEnd);
     if (!started) {
       setRefreshError(error ?? 'Could not start the scraper.');
@@ -112,15 +125,18 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
       if (!status) return;
       setProgress(status.progress);
       setRefreshMode(status.mode);
-      setImageStale(status.imageStale);
-      setImageBuiltAt(status.imageBuiltAt);
       if (!status.running) {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
         setRefreshing(false);
         setProgress(null);
-        if (status.error) setRefreshError(status.error);
-        else await onReload();
+        if (status.error) {
+          setRefreshError(status.error);
+        } else {
+          await onReload();
+          setJustCompleted(true);
+          completedTimerRef.current = setTimeout(() => setJustCompleted(false), 5000);
+        }
       }
     };
     await poll(); // don't wait a full 3s to learn which mode kicked off
@@ -173,6 +189,7 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
     ? DateTime.fromISO(prices.updatedAt).toRelative()
     : null;
   const stale = isMock || isStale(prices?.updatedAt);
+  const parsedProgress = parseProgress(progress);
 
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
@@ -207,16 +224,6 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
         >
           {refreshing ? 'Scraping…' : 'Refresh prices'}
         </button>
-        {refreshing && (
-          <span className="text-xs text-zinc-500">
-            {refreshMode && (
-              <span className="mr-1 rounded bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                via {refreshMode === 'docker' ? 'Docker' : 'local Python'}
-              </span>
-            )}
-            {progress ? `${progress} · ` : ''}this can take a few minutes
-          </span>
-        )}
         {!refreshing && stale && !refreshError && (
           <span className="text-xs text-amber-600">
             {isMock ? 'showing sample data' : 'over a day old'} — scrapes{' '}
@@ -226,11 +233,43 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
         )}
       </div>
 
-      {refreshing && imageStale && (
-        <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">
-          🔄 Docker image was outdated (built{' '}
-          {imageBuiltAt ? DateTime.fromISO(imageBuiltAt).toRelative() : 'a while ago'}) —
-          rebuilding it automatically before scraping.
+      {refreshing && (
+        <div className="mb-3">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+            {refreshMode && (
+              <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                via {refreshMode === 'docker' ? 'Docker' : 'local Python'}
+              </span>
+            )}
+            <span>
+              {parsedProgress
+                ? `Scraping ${parsedProgress.leg} · ${parsedProgress.current}/${parsedProgress.total}`
+                : (progress ?? 'starting…')}
+            </span>
+            <span className="text-zinc-400">this can take a few minutes</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+            <div
+              className={
+                parsedProgress
+                  ? 'h-full rounded-full bg-indigo-500 transition-[width] duration-500'
+                  : 'h-full w-1/3 animate-pulse rounded-full bg-indigo-500'
+              }
+              style={
+                parsedProgress
+                  ? {
+                      width: `${Math.min(100, Math.round((parsedProgress.current / parsedProgress.total) * 100))}%`,
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        </div>
+      )}
+
+      {!refreshing && justCompleted && (
+        <p className="mb-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          ✓ Scrape complete — prices updated.
         </p>
       )}
 
