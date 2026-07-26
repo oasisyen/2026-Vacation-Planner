@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
-    "preview": "vite preview"
+    "build:share": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && VITE_SHARE=1 VITE_BASE=/2026-Vacation-Planner/ vite build --outDir docs --emptyOutDir",
+    "preview": "vite preview",
+    "preview:share": "vite preview --outDir docs --base /2026-Vacation-Planner/"
   },
   "dependencies": {
     "luxon": "^3.5.0",

@@ -89,7 +89,7 @@ def _is_eva(leg) -> bool:
     return "EVA" in name or "EVA" in value or name == EVA_IATA or value == EVA_IATA
 
 
-def cheapest_eva_nonstop(models, search_mod, origin: str, dest: str, day: str):
+def cheapest_eva_nonstop(models, search_mod, origin: str, dest: str, day: str, seat_type):
     """Cheapest EVA non-stop fare for one date, or None if EVA doesn't fly / no data."""
     filters = models.FlightSearchFilters(
         passenger_info=models.PassengerInfo(adults=1),
@@ -100,7 +100,7 @@ def cheapest_eva_nonstop(models, search_mod, origin: str, dest: str, day: str):
                 travel_date=day,
             )
         ],
-        seat_type=models.SeatType.ECONOMY,
+        seat_type=seat_type,
         stops=models.MaxStops.NON_STOP,
         sort_by=models.SortBy.CHEAPEST,
     )
@@ -113,12 +113,12 @@ def cheapest_eva_nonstop(models, search_mod, origin: str, dest: str, day: str):
     return round(min(prices)) if prices else None
 
 
-def scrape_leg(models, search_mod, origin, dest, start, end, label, pace):
+def scrape_leg(models, search_mod, origin, dest, start, end, label, pace, seat_type):
     out: dict[str, float] = {}
     dates = list(daterange(start, end))
     for i, day in enumerate(dates, 1):
         try:
-            price = cheapest_eva_nonstop(models, search_mod, origin, dest, day)
+            price = cheapest_eva_nonstop(models, search_mod, origin, dest, day, seat_type)
         except Exception as exc:  # keep going; one bad date shouldn't kill the run
             eprint(f"  ! {label} {day}: {type(exc).__name__}: {exc}")
             price = None
@@ -152,24 +152,37 @@ def main() -> None:
     in_start = args.in_start or args.start
     in_end = args.in_end or args.end
 
-    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} {out_start}..{out_end}")
-    outbound = scrape_leg(models, search_mod, ORIGIN, DEST, out_start, out_end, "OUT", args.pace)
-    eprint(f"Scraping EVA (BR) non-stop {DEST}->{ORIGIN} {in_start}..{in_end}")
-    inbound = scrape_leg(models, search_mod, DEST, ORIGIN, in_start, in_end, "IN", args.pace)
+    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} economy {out_start}..{out_end}")
+    outbound = scrape_leg(
+        models, search_mod, ORIGIN, DEST, out_start, out_end, "OUT", args.pace,
+        models.SeatType.ECONOMY,
+    )
+    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} premium economy {out_start}..{out_end}")
+    outbound_premium = scrape_leg(
+        models, search_mod, ORIGIN, DEST, out_start, out_end, "OUT-PE", args.pace,
+        models.SeatType.PREMIUM_ECONOMY,
+    )
+    eprint(f"Scraping EVA (BR) non-stop {DEST}->{ORIGIN} economy {in_start}..{in_end}")
+    inbound = scrape_leg(
+        models, search_mod, DEST, ORIGIN, in_start, in_end, "IN", args.pace,
+        models.SeatType.ECONOMY,
+    )
 
     payload = {
         "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "currency": "USD",
         "outbound": outbound,
+        "outboundPremium": outbound_premium,
         "inbound": inbound,
     }
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
     eprint(
-        f"\nWrote {out_path} — {len(outbound)} outbound + {len(inbound)} inbound dates."
+        f"\nWrote {out_path} — {len(outbound)} outbound + {len(outbound_premium)} "
+        f"outbound-premium + {len(inbound)} inbound dates."
     )
-    if not outbound and not inbound:
+    if not outbound and not outbound_premium and not inbound:
         eprint(
             "No prices found. Google Flights may have changed, or EVA has no "
             "non-stop on these dates. See README.md for the fast-flights fallback."

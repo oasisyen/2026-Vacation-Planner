@@ -135,8 +135,8 @@ export function scraperPlugin(): Plugin {
     child.stderr?.on('data', (buf: Buffer) => {
       const text = buf.toString();
       errTail = (errTail + text).slice(-2000);
-      // scraper prints "  [OUT 3/60] 2026-11-03: $1250"
-      const matches = [...text.matchAll(/\[(OUT|IN) (\d+)\/(\d+)\]/g)];
+      // scraper prints "  [OUT 3/60] 2026-11-03: $1250" (also OUT-PE, IN)
+      const matches = [...text.matchAll(/\[(OUT-PE|OUT|IN) (\d+)\/(\d+)\]/g)];
       const last = matches.at(-1);
       if (last) job.progress = `${last[1]} ${last[2]}/${last[3]}`;
     });

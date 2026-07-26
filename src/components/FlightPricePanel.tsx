@@ -78,7 +78,8 @@ function MiniChart({
 }
 
 export default function FlightPricePanel({ prices, loading, onReload }: Props) {
-  const { marks, tripStart, tripEnd } = useTripStore();
+  const { marks, tripStart, tripEnd, tripSelection, setTripSelection } =
+    useTripStore();
   const currency = prices?.currency ?? 'USD';
 
   // --- Refresh (dev-server scraper) ---
@@ -136,8 +137,9 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
   // Combined trip picker
   const outDates = outData.map((d) => d.date);
   const inDates = inData.map((d) => d.date);
-  const [depart, setDepart] = useState('');
-  const [ret, setRet] = useState('');
+  const { depart, ret } = tripSelection;
+  const setDepart = (depart: string) => setTripSelection({ depart });
+  const setRet = (ret: string) => setTripSelection({ ret });
 
   const departPrice = depart ? prices?.outbound[depart] : undefined;
   const retPrice = ret ? prices?.inbound[ret] : undefined;
