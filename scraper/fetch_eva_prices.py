@@ -2,7 +2,8 @@
 """Fetch EVA Air (BR) non-stop JFK<->TPE prices per date into public/prices.json.
 
 This scrapes Google Flights via the `fli` library, keeping only EVA Air non-stop
-fares, and writes the cheapest price per departure date for both directions.
+fares, and writes the cheapest price per departure date for both directions:
+premium economy outbound (JFK->TPE), economy inbound (TPE->JFK).
 
 Requirements: Python 3.10+ and `fli` (see requirements.txt). The web app reads the
 resulting public/prices.json — it never talks to Google directly.
@@ -152,14 +153,9 @@ def main() -> None:
     in_start = args.in_start or args.start
     in_end = args.in_end or args.end
 
-    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} economy {out_start}..{out_end}")
+    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} premium economy {out_start}..{out_end}")
     outbound = scrape_leg(
         models, search_mod, ORIGIN, DEST, out_start, out_end, "OUT", args.pace,
-        models.SeatType.ECONOMY,
-    )
-    eprint(f"Scraping EVA (BR) non-stop {ORIGIN}->{DEST} premium economy {out_start}..{out_end}")
-    outbound_premium = scrape_leg(
-        models, search_mod, ORIGIN, DEST, out_start, out_end, "OUT-PE", args.pace,
         models.SeatType.PREMIUM_ECONOMY,
     )
     eprint(f"Scraping EVA (BR) non-stop {DEST}->{ORIGIN} economy {in_start}..{in_end}")
@@ -172,17 +168,13 @@ def main() -> None:
         "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "currency": "USD",
         "outbound": outbound,
-        "outboundPremium": outbound_premium,
         "inbound": inbound,
     }
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
-    eprint(
-        f"\nWrote {out_path} — {len(outbound)} outbound + {len(outbound_premium)} "
-        f"outbound-premium + {len(inbound)} inbound dates."
-    )
-    if not outbound and not outbound_premium and not inbound:
+    eprint(f"\nWrote {out_path} — {len(outbound)} outbound + {len(inbound)} inbound dates.")
+    if not outbound and not inbound:
         eprint(
             "No prices found. Google Flights may have changed, or EVA has no "
             "non-stop on these dates. See README.md for the fast-flights fallback."

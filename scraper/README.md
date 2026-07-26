@@ -95,13 +95,12 @@ Meanwhile the app keeps showing the last `prices.json` it has, with its
 {
   "updatedAt": "2026-07-19T12:00:00Z",
   "currency": "USD",
-  "outbound": { "2026-11-18": 1165 },
-  "outboundPremium": { "2026-11-18": 2100 },
+  "outbound": { "2026-11-18": 2100 },
   "inbound":  { "2026-12-09": 1060 }
 }
 ```
 
-`outbound`/`inbound` are economy fares; `outboundPremium` is the premium economy
-fare for the same JFK->TPE leg. All three come from Google Flights' cabin-class
-filter (`fli`'s `SeatType`) — it only exposes cabin, not fare-basis/booking-class
-letters (e.g. Y/B/M/H/Q, L/T), so those aren't tracked here.
+`outbound` (JFK->TPE) is a **premium economy** fare; `inbound` (TPE->JFK) is
+**economy**. Both come from Google Flights' cabin-class filter (`fli`'s
+`SeatType`) — it only exposes cabin, not fare-basis/booking-class letters
+(e.g. Q/H/M/B/Y, L/T), so those aren't tracked here.
