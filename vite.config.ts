@@ -13,6 +13,11 @@ export default defineConfig({
   // share build sets VITE_BASE (see the build:share script). Local dev stays at /.
   base: process.env.VITE_BASE ?? '/',
   plugins: [react(), tailwindcss(), scraperPlugin(), plansPlugin()],
+  server: {
+    // plans.json is rewritten by the /api/plans endpoint on every save/delete;
+    // the panel already holds the new state, so don't full-reload the page.
+    watch: { ignored: ['**/public/plans.json'] },
+  },
   build: {
     // The flight panel (and its heavy recharts dep) is lazy-loaded in App.tsx, so
     // it splits into its own async chunk that loads after first paint. That async

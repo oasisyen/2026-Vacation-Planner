@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTripStore } from '../store/useTripStore';
 import { uncoveredEventDates } from '../lib/quota';
 import { shortDayLabel } from '../lib/dates';
+import { eventTimeIn, eventTimeLabel } from '../lib/events';
 import EventEditor from './EventEditor';
 
 export default function EventList() {
@@ -126,6 +127,17 @@ export default function EventList() {
                   <p className="text-xs text-zinc-500">
                     {dateRangeLabel(ev.startDate, ev.endDate)}
                   </p>
+                  {eventTimeLabel(ev) && (
+                    <p className="text-xs text-zinc-500">
+                      🕒 {eventTimeLabel(ev)}
+                      {eventTimeIn(ev, displayZone) && (
+                        <span className="text-zinc-400">
+                          {' '}
+                          · {eventTimeIn(ev, displayZone)}
+                        </span>
+                      )}
+                    </p>
+                  )}
                   {ev.notes && (
                     <p className="mt-1 text-xs text-zinc-500">{ev.notes}</p>
                   )}

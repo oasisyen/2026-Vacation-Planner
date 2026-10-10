@@ -34,6 +34,7 @@ function snapshotPlan(s: ReturnType<typeof useTripStore.getState>): PersistedTri
 export default function SharedOptionsPanel({ prices }: Props) {
   const importState = useTripStore((s) => s.importState);
   const tripSelection = useTripStore((s) => s.tripSelection);
+  const setTripSelection = useTripStore((s) => s.setTripSelection);
 
   const [options, setOptions] = useState<SharedOption[]>([]);
   const [label, setLabel] = useState('');
@@ -41,6 +42,11 @@ export default function SharedOptionsPanel({ prices }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Inline confirm / rename instead of window.confirm / window.prompt, which some
+  // embedded browsers (e.g. app webviews) suppress by returning false/null.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   useEffect(() => {
     void loadPlans().then((f) => {
@@ -103,23 +109,36 @@ export default function SharedOptionsPanel({ prices }: Props) {
 
   const loadOption = (o: SharedOption) => {
     importState(o.plan);
+    setTripSelection({
+      depart: o.flight?.depart ?? '',
+      ret: o.flight?.return ?? '',
+    });
     setStatus(`Loaded "${o.label}" into the editor.`);
     window.setTimeout(() => setStatus(null), 2500);
   };
 
-  const renameOption = (o: SharedOption) => {
-    const next = window.prompt('Rename option', o.label);
-    if (next == null) return;
-    const trimmed = next.trim();
-    if (!trimmed) return;
+  const startRename = (o: SharedOption) => {
+    setConfirmingId(null);
+    setRenamingId(o.id);
+    setRenameDraft(o.label);
+  };
+
+  const commitRename = (o: SharedOption) => {
+    const trimmed = renameDraft.trim();
+    setRenamingId(null);
+    if (!trimmed || trimmed === o.label) return;
     void persist(
       options.map((x) => (x.id === o.id ? { ...x, label: trimmed } : x)),
     );
   };
 
-  const deleteOption = (o: SharedOption) => {
-    if (!window.confirm(`Delete "${o.label}"? This can't be undone.`)) return;
-    void persist(options.filter((x) => x.id !== o.id));
+  const deleteOption = async (o: SharedOption) => {
+    setConfirmingId(null);
+    const ok = await persist(options.filter((x) => x.id !== o.id));
+    if (ok) {
+      setStatus(`Deleted "${o.label}".`);
+      window.setTimeout(() => setStatus(null), 2500);
+    }
   };
 
   const move = (idx: number, dir: -1 | 1) => {
@@ -191,7 +210,21 @@ export default function SharedOptionsPanel({ prices }: Props) {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{o.label}</p>
+                  {renamingId === o.id ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(o);
+                        if (e.key === 'Escape') setRenamingId(null);
+                      }}
+                      className="w-full rounded border border-indigo-400 px-1 py-0.5 text-sm font-medium dark:bg-zinc-900"
+                    />
+                  ) : (
+                    <p className="truncate font-medium">{o.label}</p>
+                  )}
                   <p className="text-[11px] text-zinc-400">
                     {DateTime.fromISO(o.plan.tripStart).toFormat('LLL d')}–
                     {DateTime.fromISO(o.plan.tripEnd).toFormat('LLL d')}
@@ -238,27 +271,71 @@ export default function SharedOptionsPanel({ prices }: Props) {
                 </div>
               </div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => loadOption(o)}
-                  className="rounded border border-zinc-300 px-2 py-0.5 font-medium dark:border-zinc-600"
-                >
-                  Load
-                </button>
-                <button
-                  type="button"
-                  onClick={() => renameOption(o)}
-                  className="rounded border border-zinc-300 px-2 py-0.5 dark:border-zinc-600"
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteOption(o)}
-                  className="rounded border border-zinc-300 px-2 py-0.5 text-rose-600 dark:border-zinc-600"
-                >
-                  Delete
-                </button>
+                {renamingId === o.id ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => commitRename(o)}
+                      className="rounded bg-indigo-600 px-2 py-0.5 font-medium text-white"
+                    >
+                      Save name
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRenamingId(null)}
+                      className="rounded border border-zinc-300 px-2 py-0.5 dark:border-zinc-600"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : confirmingId === o.id ? (
+                  <>
+                    <span className="self-center text-rose-600 dark:text-rose-300">
+                      Delete this option? Can't be undone.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteOption(o)}
+                      className="rounded bg-rose-600 px-2 py-0.5 font-medium text-white"
+                    >
+                      Yes, delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingId(null)}
+                      className="rounded border border-zinc-300 px-2 py-0.5 dark:border-zinc-600"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => loadOption(o)}
+                      className="rounded border border-zinc-300 px-2 py-0.5 font-medium dark:border-zinc-600"
+                    >
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startRename(o)}
+                      className="rounded border border-zinc-300 px-2 py-0.5 dark:border-zinc-600"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingId(null);
+                        setConfirmingId(o.id);
+                      }}
+                      className="rounded border border-zinc-300 px-2 py-0.5 text-rose-600 dark:border-zinc-600"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </li>
           ))}

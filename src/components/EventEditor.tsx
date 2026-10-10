@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { TripEvent } from '../store/useTripStore';
+import type { TripEvent, Zone } from '../store/useTripStore';
+import { EST_ZONE, TPE_ZONE } from '../lib/dates';
+import { eventTimeIn, eventTimeLabel } from '../lib/events';
 
 interface Props {
   initial?: TripEvent;
@@ -18,14 +20,43 @@ export default function EventEditor({
   const [startDate, setStartDate] = useState(initial?.startDate ?? defaultDate);
   const [endDate, setEndDate] = useState(initial?.endDate ?? defaultDate);
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [hasTime, setHasTime] = useState(!!initial?.startTime);
+  const [startTime, setStartTime] = useState(initial?.startTime ?? '');
+  const [endTime, setEndTime] = useState(initial?.endTime ?? '');
+  const [timeZone, setTimeZone] = useState<Zone>(initial?.timeZone ?? TPE_ZONE);
 
-  const valid = title.trim() !== '' && startDate !== '' && endDate !== '';
+  // Normalize so start <= end.
+  const [s, e] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate];
+  const timed = hasTime && startTime !== '';
+  const endBeforeStart =
+    timed && endTime !== '' && s === e && endTime <= startTime;
+
+  const valid =
+    title.trim() !== '' &&
+    startDate !== '' &&
+    endDate !== '' &&
+    (!hasTime || startTime !== '') &&
+    !endBeforeStart;
+
+  const draft: Omit<TripEvent, 'id'> = {
+    title: title.trim(),
+    startDate: s,
+    endDate: e,
+    // Explicit undefineds so an edit (merged into the old event) clears a
+    // previously set time when "Add a time" is unticked.
+    startTime: timed ? startTime : undefined,
+    endTime: timed ? endTime || undefined : undefined,
+    timeZone: timed ? timeZone : undefined,
+    notes: notes.trim() || undefined,
+  };
+  const preview = timed ? eventTimeLabel(draft as TripEvent) : null;
+  const previewOther = timed
+    ? eventTimeIn(draft as TripEvent, timeZone === TPE_ZONE ? EST_ZONE : TPE_ZONE)
+    : null;
 
   const submit = () => {
     if (!valid) return;
-    // Normalize so start <= end.
-    const [s, e] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate];
-    onSave({ title: title.trim(), startDate: s, endDate: e, notes: notes.trim() || undefined });
+    onSave(draft);
   };
 
   return (
@@ -57,6 +88,72 @@ export default function EventEditor({
           />
         </label>
       </div>
+      {/* Optional time */}
+      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={hasTime}
+          onChange={(ev) => setHasTime(ev.target.checked)}
+          className="accent-indigo-600"
+        />
+        Add a time
+      </label>
+      {hasTime && (
+        <div className="space-y-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
+          <div className="flex items-end gap-2 text-sm">
+            <label className="flex-1">
+              <span className="mb-0.5 block text-xs text-zinc-500">
+                Starts{s !== e ? ` (${s.slice(5)})` : ''}
+              </span>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(ev) => setStartTime(ev.target.value)}
+                className="w-full rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+              />
+            </label>
+            <label className="flex-1">
+              <span className="mb-0.5 block text-xs text-zinc-500">
+                Ends{s !== e ? ` (${e.slice(5)})` : ''} · optional
+              </span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(ev) => setEndTime(ev.target.value)}
+                className="w-full rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+              />
+            </label>
+          </div>
+          <label className="block text-sm">
+            <span className="mb-0.5 block text-xs text-zinc-500">Time zone</span>
+            <select
+              value={timeZone}
+              onChange={(ev) => setTimeZone(ev.target.value as Zone)}
+              className="w-full rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+            >
+              <option value={TPE_ZONE}>Taipei</option>
+              <option value={EST_ZONE}>New York</option>
+            </select>
+          </label>
+          {endBeforeStart ? (
+            <p className="text-xs text-rose-600 dark:text-rose-300">
+              End time is before the start time.
+            </p>
+          ) : (
+            preview && (
+              <p className="text-xs text-zinc-500">
+                🕒 {preview}
+                {previewOther && (
+                  <span className="text-zinc-400"> · {previewOther}</span>
+                )}
+              </p>
+            )
+          )}
+          {hasTime && startTime === '' && (
+            <p className="text-xs text-zinc-400">Pick a start time, or untick “Add a time”.</p>
+          )}
+        </div>
+      )}
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}

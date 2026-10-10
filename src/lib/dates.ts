@@ -35,19 +35,17 @@ export function eachDay(startISO: string, endISO: string): string[] {
 }
 
 /**
- * Build a month grid (weeks of 7) covering the given month, padded with the
- * surrounding days so each row is a full Sun..Sat week.
+ * Continuous Sun..Sat weeks covering the range, so months flow into each other
+ * without repeating the overlap days.
  */
-export function monthGrid(year: number, month: number): string[][] {
-  const first = DateTime.local(year, month, 1);
-  // Luxon weekday: Mon=1..Sun=7. We want weeks starting Sunday.
-  const startOffset = first.weekday % 7; // Sun(7)->0, Mon(1)->1 ...
-  const gridStart = first.minus({ days: startOffset });
-
+export function weeksInRange(startISO: string, endISO: string): string[][] {
+  const start = fromISO(startISO);
+  const end = fromISO(endISO);
+  if (end < start) return [];
+  let cur = start.minus({ days: start.weekday % 7 });
+  const last = end.plus({ days: 6 - (end.weekday % 7) });
   const weeks: string[][] = [];
-  let cur = gridStart;
-  // 6 rows covers any month layout.
-  for (let w = 0; w < 6; w++) {
+  while (cur <= last) {
     const week: string[] = [];
     for (let d = 0; d < 7; d++) {
       week.push(toISO(cur));
@@ -56,21 +54,6 @@ export function monthGrid(year: number, month: number): string[][] {
     weeks.push(week);
   }
   return weeks;
-}
-
-/** List of {year, month} pairs spanned by the trip range, inclusive. */
-export function monthsInRange(
-  startISO: string,
-  endISO: string,
-): { year: number; month: number }[] {
-  const out: { year: number; month: number }[] = [];
-  let cur = fromISO(startISO).startOf('month');
-  const end = fromISO(endISO).startOf('month');
-  while (cur <= end) {
-    out.push({ year: cur.year, month: cur.month });
-    cur = cur.plus({ months: 1 });
-  }
-  return out;
 }
 
 export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

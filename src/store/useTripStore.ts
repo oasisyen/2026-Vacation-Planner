@@ -24,6 +24,12 @@ export interface TripEvent {
   /** inclusive ISO date range; startDate === endDate means a single day */
   startDate: string;
   endDate: string;
+  /** Optional local start time "HH:mm" on startDate, in `timeZone`. */
+  startTime?: string;
+  /** Optional local end time "HH:mm" on endDate, in `timeZone`. */
+  endTime?: string;
+  /** Zone the times are given in; defaults to Taipei (where plans happen). */
+  timeZone?: Zone;
   notes?: string;
 }
 
@@ -39,10 +45,13 @@ export interface TripState {
   flightPrefs: { origin: string; destination: string };
   /** Currently picked round trip in the flight panel (transient, editor-only). */
   tripSelection: { depart: string; ret: string };
+  /** Show fare badges on the calendar / list (view preference, not part of a plan). */
+  showPrices: boolean;
 
   // actions
   setTripRange: (start: string, end: string) => void;
   setTripSelection: (patch: Partial<{ depart: string; ret: string }>) => void;
+  setShowPrices: (show: boolean) => void;
   setMark: (date: string, status: DayStatus) => void;
   setMarks: (dates: string[], status: DayStatus) => void;
   clearMarks: (dates: string[]) => void;
@@ -88,11 +97,14 @@ export const useTripStore = create<TripState>()(
     (set) => ({
       ...DEFAULTS,
       tripSelection: { depart: '', ret: '' },
+      showPrices: true,
 
       setTripRange: (start, end) => set({ tripStart: start, tripEnd: end }),
 
       setTripSelection: (patch) =>
         set((s) => ({ tripSelection: { ...s.tripSelection, ...patch } })),
+
+      setShowPrices: (show) => set({ showPrices: show }),
 
       setMark: (date, status) =>
         set((s) => ({ marks: { ...s.marks, [date]: status } })),

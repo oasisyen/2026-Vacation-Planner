@@ -1,5 +1,10 @@
 import { DateTime } from 'luxon';
 import type { TripEvent } from '../../store/useTripStore';
+import { EST_ZONE, TPE_ZONE } from '../../lib/dates';
+import { eventTimeIn, eventTimeLabel, eventZone } from '../../lib/events';
+
+/** Family is split across both cities, so show the time in the other one too. */
+const otherZone = (e: TripEvent) => (eventZone(e) === TPE_ZONE ? EST_ZONE : TPE_ZONE);
 
 interface Props {
   events: TripEvent[];
@@ -27,6 +32,14 @@ export default function EventSummary({ events }: Props) {
               <span className="font-medium">{e.title}</span>
               <span className="shrink-0 text-xs text-zinc-400">{range(e)}</span>
             </div>
+            {eventTimeLabel(e) && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                🕒 {eventTimeLabel(e)}
+                {eventTimeIn(e, otherZone(e)) && (
+                  <span className="text-zinc-400"> · {eventTimeIn(e, otherZone(e))}</span>
+                )}
+              </p>
+            )}
             {e.notes && (
               <p className="text-xs text-zinc-500 dark:text-zinc-400">{e.notes}</p>
             )}

@@ -159,8 +159,20 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
   const bestIn = prices ? cheapest(prices.inbound) : null;
 
   // Combined trip picker
-  const outDates = outData.map((d) => d.date);
-  const inDates = inData.map((d) => d.date);
+  // Offer every day in the trip window (not just days with a scraped fare), so a
+  // trip can still be picked when prices are missing or stale. Keep the current
+  // picks listed even if the window has since moved.
+  const pickerDates = (picked: string) => {
+    const days = tripStart <= tripEnd ? eachDay(tripStart, tripEnd) : [];
+    if (picked && !days.includes(picked)) days.push(picked);
+    return days.sort();
+  };
+  const outDates = pickerDates(tripSelection.depart);
+  const inDates = pickerDates(tripSelection.ret);
+  const dateOption = (d: string, price: number | undefined) =>
+    `${DateTime.fromISO(d).toFormat('ccc LLL d')}${
+      price != null ? ` · ${formatPrice(price, currency)}` : ''
+    }`;
   const { depart, ret } = tripSelection;
   const setDepart = (depart: string) => setTripSelection({ depart });
   const setRet = (ret: string) => setTripSelection({ ret });
@@ -353,8 +365,7 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
                   <option value="">—</option>
                   {outDates.map((d) => (
                     <option key={d} value={d}>
-                      {DateTime.fromISO(d).toFormat('LLL d')} ·{' '}
-                      {formatPrice(prices.outbound[d], currency)}
+                      {dateOption(d, prices?.outbound[d])}
                     </option>
                   ))}
                 </select>
@@ -371,19 +382,22 @@ export default function FlightPricePanel({ prices, loading, onReload }: Props) {
                     .filter((d) => !depart || d >= depart)
                     .map((d) => (
                       <option key={d} value={d}>
-                        {DateTime.fromISO(d).toFormat('LLL d')} ·{' '}
-                        {formatPrice(prices.inbound[d], currency)}
+                        {dateOption(d, prices?.inbound[d])}
                       </option>
                     ))}
                 </select>
               </label>
             </div>
 
-            {total != null && (
+            {(total != null || tripDays) && (
               <div className="mt-2 text-sm">
                 <p>
                   Round-trip airfare:{' '}
-                  <strong>{formatPrice(total, currency)}</strong>
+                  {total != null ? (
+                    <strong>{formatPrice(total, currency)}</strong>
+                  ) : (
+                    <span className="text-zinc-400">no fare data</span>
+                  )}
                 </p>
                 {tripDays && (
                   <p className="mt-0.5 text-xs text-zinc-500">
